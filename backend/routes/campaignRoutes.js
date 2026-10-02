@@ -1,246 +1,255 @@
 const express = require("express");
 const multer = require("multer");
-const { parse } = require("csv-parse/sync");
+
+const cloudinary = require("../config/cloudinary");
+const { analyzeCreative } = require("../services/aiService");
 
 const {
-  saveCampaign,
-  getCampaign,
-} = require("../services/campaignStore");
+  saveCreative,
+  getAllCreatives,
+} = require("../services/creativeStore");
 
 const router = express.Router();
 
-// CSV upload configuration
+// ==========================================
+// FILE UPLOAD CONFIGURATION
+// ==========================================
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5 MB
+    fileSize: 10 * 1024 * 1024, // 10 MB
   },
 });
 
-// POST /api/campaigns/upload
-router.post("/upload", upload.single("campaign"), async (req, res) => {
-  try {
-    // Check file
-    if (!req.file) {
-      return res.status(400).json({
-        message: "No CSV file uploaded",
+// ==========================================
+// UPLOAD + ANALYZE CREATIVE
+// ==========================================
+
+router.post(
+  "/upload",
+  upload.single("creative"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          message: "No image uploaded",
+        });
+      }
+
+      console.log("=================================");
+      console.log("CREATIVE UPLOAD STARTED");
+      console.log("=================================");
+
+      console.log(
+        "File:",
+        req.file.originalname
+      );
+
+      console.log(
+        "Size:",
+        req.file.size,
+        "bytes"
+      );
+
+      console.log(
+        "MIME:",
+        req.file.mimetype
+      );
+
+      // ==========================================
+      // 1. UPLOAD IMAGE TO CLOUDINARY
+      // ==========================================
+
+      console.log(
+        "Uploading image to Cloudinary..."
+      );
+
+      const cloudinaryResult =
+        await new Promise(
+          (resolve, reject) => {
+            const stream =
+              cloudinary.uploader.upload_stream(
+                {
+                  folder:
+                    "insightforge/creatives",
+                  resource_type: "image",
+                },
+                (error, result) => {
+                  if (error) {
+                    console.error(
+                      "Cloudinary upload error:",
+                      error
+                    );
+
+                    reject(error);
+                  } else {
+                    resolve(result);
+                  }
+                }
+              );
+
+            stream.on(
+              "error",
+              (error) => {
+                console.error(
+                  "Cloudinary stream error:",
+                  error
+                );
+
+                reject(error);
+              }
+            );
+
+            stream.end(req.file.buffer);
+          }
+        );
+
+      console.log(
+        "Cloudinary upload successful!"
+      );
+
+      console.log(
+        "Cloudinary URL:",
+        cloudinaryResult.secure_url
+      );
+
+      // ==========================================
+      // 2. ANALYZE IMAGE WITH GROQ
+      // ==========================================
+
+      console.log(
+        "Sending image to Groq..."
+      );
+
+      const analysis =
+        await analyzeCreative(
+          cloudinaryResult.secure_url
+        );
+
+      console.log(
+        "AI analysis successful!"
+      );
+
+      // ==========================================
+      // 3. SAVE CREATIVE
+      // ==========================================
+
+      saveCreative(
+        req.file.originalname,
+        {
+          url:
+            cloudinaryResult.secure_url,
+
+          publicId:
+            cloudinaryResult.public_id,
+
+          width:
+            cloudinaryResult.width,
+
+          height:
+            cloudinaryResult.height,
+
+          analysis,
+        }
+      );
+
+      console.log(
+        "Creative analysis saved!"
+      );
+
+      // ==========================================
+      // 4. SEND RESPONSE TO FRONTEND
+      // ==========================================
+
+      return res.status(201).json({
+        message:
+          "Creative analyzed successfully",
+
+        url:
+          cloudinaryResult.secure_url,
+
+        publicId:
+          cloudinaryResult.public_id,
+
+        width:
+          cloudinaryResult.width,
+
+        height:
+          cloudinaryResult.height,
+
+        analysis,
+      });
+    } catch (error) {
+      console.error(
+        "================================="
+      );
+
+      console.error(
+        "CREATIVE ANALYSIS ERROR"
+      );
+
+      console.error(
+        "================================="
+      );
+
+      console.error(
+        "Message:",
+        error?.message
+      );
+
+      console.error(
+        "Full Error:",
+        error
+      );
+
+      console.error(
+        "================================="
+      );
+
+      return res.status(500).json({
+        message:
+          "Creative analysis failed",
+
+        error:
+          error?.message ||
+          "Unknown error",
       });
     }
-
-    // Convert CSV file to text
-    const csvText = req.file.buffer.toString("utf-8");
-
-    // Parse CSV
-    const records = parse(csvText, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    });
-
-    // Check if CSV is empty
-    if (!records.length) {
-      return res.status(400).json({
-        message: "CSV file is empty",
-      });
-    }
-
-    // Required CSV columns
-    const requiredColumns = [
-      "Creative",
-      "Impressions",
-      "Clicks",
-      "Conversions",
-      "Spend",
-    ];
-
-    const availableColumns = Object.keys(records[0]);
-
-    const missingColumns = requiredColumns.filter(
-      (column) => !availableColumns.includes(column)
-    );
-
-    // Check missing columns
-    if (missingColumns.length > 0) {
-      return res.status(400).json({
-        message: "Missing required CSV columns",
-        missingColumns,
-        requiredColumns,
-      });
-    }
-
-    // Process each campaign row
-    const campaignData = records.map((row) => {
-      const impressions = Number(row.Impressions) || 0;
-      const clicks = Number(row.Clicks) || 0;
-      const conversions = Number(row.Conversions) || 0;
-      const spend = Number(row.Spend) || 0;
-
-      const revenue =
-        row.Revenue !== undefined
-          ? Number(row.Revenue) || 0
-          : 0;
-
-      // CTR
-      const ctr =
-        impressions > 0
-          ? (clicks / impressions) * 100
-          : 0;
-
-      // CVR
-      const cvr =
-        clicks > 0
-          ? (conversions / clicks) * 100
-          : 0;
-
-      // CPC
-      const cpc =
-        clicks > 0
-          ? spend / clicks
-          : 0;
-
-      // CPA
-      const cpa =
-        conversions > 0
-          ? spend / conversions
-          : 0;
-
-      // ROAS
-      const roas =
-        spend > 0
-          ? revenue / spend
-          : null;
-
-      return {
-        creative: row.Creative,
-        impressions,
-        clicks,
-        conversions,
-        spend,
-        revenue,
-
-        ctr: Number(ctr.toFixed(2)),
-        cvr: Number(cvr.toFixed(2)),
-        cpc: Number(cpc.toFixed(2)),
-        cpa: Number(cpa.toFixed(2)),
-
-        roas:
-          roas !== null
-            ? Number(roas.toFixed(2))
-            : null,
-      };
-    });
-
-    // Calculate totals
-    const totalImpressions = campaignData.reduce(
-      (sum, row) => sum + row.impressions,
-      0
-    );
-
-    const totalClicks = campaignData.reduce(
-      (sum, row) => sum + row.clicks,
-      0
-    );
-
-    const totalConversions = campaignData.reduce(
-      (sum, row) => sum + row.conversions,
-      0
-    );
-
-    const totalSpend = campaignData.reduce(
-      (sum, row) => sum + row.spend,
-      0
-    );
-
-    const totalRevenue = campaignData.reduce(
-      (sum, row) => sum + row.revenue,
-      0
-    );
-
-    // Overall CTR
-    const overallCTR =
-      totalImpressions > 0
-        ? (totalClicks / totalImpressions) * 100
-        : 0;
-
-    // Overall CVR
-    const overallCVR =
-      totalClicks > 0
-        ? (totalConversions / totalClicks) * 100
-        : 0;
-
-    // Overall CPC
-    const overallCPC =
-      totalClicks > 0
-        ? totalSpend / totalClicks
-        : 0;
-
-    // Overall CPA
-    const overallCPA =
-      totalConversions > 0
-        ? totalSpend / totalConversions
-        : 0;
-
-    // Overall ROAS
-    const overallROAS =
-      totalSpend > 0
-        ? totalRevenue / totalSpend
-        : null;
-
-    // Final campaign result
-    const result = {
-      message: "Campaign CSV processed successfully",
-
-      summary: {
-        totalImpressions,
-        totalClicks,
-        totalConversions,
-
-        totalSpend: Number(totalSpend.toFixed(2)),
-        totalRevenue: Number(totalRevenue.toFixed(2)),
-
-        ctr: Number(overallCTR.toFixed(2)),
-        cvr: Number(overallCVR.toFixed(2)),
-        cpc: Number(overallCPC.toFixed(2)),
-        cpa: Number(overallCPA.toFixed(2)),
-
-        roas:
-          overallROAS !== null
-            ? Number(overallROAS.toFixed(2))
-            : null,
-      },
-
-      campaignData,
-    };
-
-    // Save latest campaign data
-    saveCampaign(result);
-
-    // Send response
-    return res.status(201).json(result);
-  } catch (error) {
-    console.error(
-      "Campaign CSV processing error:",
-      error
-    );
-
-    return res.status(500).json({
-      message: "Failed to process campaign CSV",
-      error: error.message,
-    });
   }
-});
+);
 
-// GET /api/campaigns/latest
-router.get("/latest", (req, res) => {
-  const campaign = getCampaign();
+// ==========================================
+// GET STORED CREATIVES
+// ==========================================
 
-  if (!campaign) {
-    return res.status(404).json({
-      message: "No campaign data uploaded yet.",
-    });
+router.get(
+  "/stored",
+  (req, res) => {
+    try {
+      const creatives =
+        getAllCreatives();
+
+      return res.json({
+        count: creatives.length,
+        creatives,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to get stored creatives:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to retrieve stored creatives",
+
+        error:
+          error?.message ||
+          "Unknown error",
+      });
+    }
   }
-
-  return res.json(campaign);
-});
+);
 
 module.exports = router;

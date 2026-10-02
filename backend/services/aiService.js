@@ -1,75 +1,52 @@
-<<<<<<< HEAD
-const { GoogleGenAI } = require("@google/genai");
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 async function analyzeCreative(imageUrl) {
-  try {
-    // Get the image from Cloudinary
-    const response = await fetch(imageUrl);
+  if (!GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is missing in .env");
+  }
 
-    if (!response.ok) {
-      throw new Error("Could not fetch image from Cloudinary");
-    }
+  console.log("Sending image to Groq...");
 
-    const imageBuffer = Buffer.from(await response.arrayBuffer());
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
 
-    const mimeType =
-      response.headers.get("content-type") || "image/jpeg";
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+      },
 
-    const base64Image = imageBuffer.toString("base64");
-=======
-async function analyzeCreative(imageUrl) {
-  try {
-    console.log("Sending image to Groq...");
->>>>>>> c177d63 (Connect campaign analytics and dashboard to backend)
+      body: JSON.stringify({
+        model: "qwen/qwen3.8-27b",
 
-    const prompt = `
-You are an AI marketing creative analyst.
+        temperature: 0.2,
 
-Analyze this advertisement image for a marketing intelligence platform.
+        max_completion_tokens: 1500,
 
-Return a structured analysis covering:
+        response_format: {
+          type: "json_object",
+        },
 
-1. Visual Elements
-- Dominant colors
-- Composition
-- Objects/products visible
-- Overall visual style
+        messages: [
+          {
+            role: "system",
 
-2. Text & CTA
-- Main text
-- CTA text
-- Text density
-- Whether the CTA is visually prominent
+            content:
+              "You are a marketing creative analysis assistant. Analyze the provided marketing image and return only valid JSON.",
+          },
 
-3. Product Visibility
-- What product/service is being promoted
-- How prominently it appears
-- Product placement
+          {
+            role: "user",
 
-4. Human Presence
-- Whether people are present
-- If present, describe their role
+            content: [
+              {
+                type: "text",
 
-5. Marketing Summary
-- Overall creative strategy
-- Target audience impression
+                text: `
+Analyze this marketing creative.
 
-6. Recommendations
-- Give 3 actionable suggestions for improving or testing this creative.
-
-Important:
-Do not claim that any visual feature causes better campaign performance.
-Use language such as "may", "could", "appears", or "is associated with".
-
-<<<<<<< HEAD
-Return the answer as JSON with these keys:
-=======
-Return ONLY valid JSON using exactly this structure:
->>>>>>> c177d63 (Connect campaign analytics and dashboard to backend)
+Return JSON using exactly this structure:
 
 {
   "visualElements": {
@@ -96,115 +73,70 @@ Return ONLY valid JSON using exactly this structure:
   "marketingSummary": "",
   "recommendations": []
 }
-`;
 
-<<<<<<< HEAD
-    const result = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Image,
+Focus on:
+
+- dominant colors
+- composition
+- objects/products
+- visual style
+- visible text
+- CTA
+- text density
+- CTA prominence
+- product visibility
+- human presence
+- marketing summary
+- practical recommendations
+
+Do not invent information that cannot reasonably be observed.
+`,
+              },
+
+              {
+                type: "image_url",
+
+                image_url: {
+                  url: imageUrl,
+                },
+              },
+            ],
           },
-        },
-        {
-          text: prompt,
-        },
-      ],
-    });
+        ],
+      }),
+    }
+  );
 
-    return result.text;
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Groq API error ${response.status}: ${errorText}`
+    );
+  }
+
+  const data = await response.json();
+
+  const content =
+    data?.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error(
+      "Groq returned an empty analysis response"
+    );
+  }
+
+  try {
+    return JSON.parse(content);
   } catch (error) {
-    console.error("AI analysis error:", error);
-=======
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-
-        headers: {
-          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          model: "qwen/qwen3.8-27b",
-
-          messages: [
-            {
-              role: "user",
-
-              content: [
-                {
-                  type: "text",
-                  text: prompt,
-                },
-
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageUrl,
-                  },
-                },
-              ],
-            },
-          ],
-
-          temperature: 0.2,
-
-          max_completion_tokens: 1500,
-
-          response_format: {
-            type: "json_object",
-          },
-        }),
-      }
+    console.error(
+      "Failed to parse Groq JSON:",
+      content
     );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("Groq API error:");
-      console.error(JSON.stringify(data, null, 2));
-
-      throw new Error(
-        data?.error?.message || "Groq API request failed"
-      );
-    }
-
-    const text = data?.choices?.[0]?.message?.content;
-
-    if (!text) {
-      throw new Error("Groq returned an empty response");
-    }
-
-    console.log("Groq analysis received successfully");
-
-    let analysis;
-
-    try {
-      analysis = JSON.parse(text);
-    } catch (parseError) {
-      console.error("Groq returned invalid JSON:");
-      console.error(text);
-
-      throw new Error("Groq returned invalid JSON");
-    }
-
-    return analysis;
-
-  } catch (error) {
-    console.error("=================================");
-    console.error("AI ANALYSIS ERROR");
-    console.error("=================================");
-    console.error("Message:", error?.message);
-    console.error("Name:", error?.name);
-    console.error("Stack:", error?.stack);
-    console.error("=================================");
-
->>>>>>> c177d63 (Connect campaign analytics and dashboard to backend)
-    throw error;
+    throw new Error(
+      "Groq returned invalid JSON"
+    );
   }
 }
 

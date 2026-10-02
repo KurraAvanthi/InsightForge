@@ -1,70 +1,219 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./AIInsights.css";
 
 function AIInsights() {
   const [openPattern, setOpenPattern] = useState(null);
   const [openRecommendation, setOpenRecommendation] = useState(null);
 
-  // Temporary frontend data
+  const [campaign, setCampaign] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // =========================================================
+  // LOAD CAMPAIGN DATA
+  // =========================================================
+
+  useEffect(() => {
+    const loadCampaignData = async () => {
+      try {
+        const response = await fetch(
+          "http://localhost:5000/api/campaigns/latest"
+        );
+
+        if (!response.ok) {
+          throw new Error("No campaign data available");
+        }
+
+        const data = await response.json();
+
+        console.log("AI Insights campaign data:", data);
+
+        setCampaign(data);
+      } catch (error) {
+        console.log(
+          "AI Insights data unavailable:",
+          error.message
+        );
+
+        setCampaign(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCampaignData();
+  }, []);
+
+  // =========================================================
+  // CAMPAIGN DATA
+  // =========================================================
+
+  const campaignData = campaign?.campaignData || [];
+
+  const summary = campaign?.summary || {
+    ctr: 0,
+    cvr: 0,
+    cpc: 0,
+    cpa: 0,
+    roas: null,
+  };
+
+  // =========================================================
+  // TOP CREATIVE
+  // =========================================================
+
+  const topCreative =
+    campaignData.length > 0
+      ? campaignData.reduce((best, current) =>
+          Number(current.ctr) > Number(best.ctr)
+            ? current
+            : best
+        )
+      : null;
+
+  // =========================================================
+  // LOWEST CREATIVE
+  // =========================================================
+
+  const lowestCreative =
+    campaignData.length > 0
+      ? campaignData.reduce((lowest, current) =>
+          Number(current.ctr) < Number(lowest.ctr)
+            ? current
+            : lowest
+        )
+      : null;
+
+  // =========================================================
+  // CTR RANGE
+  // =========================================================
+
+  const ctrRange =
+    topCreative && lowestCreative
+      ? (
+          Number(topCreative.ctr) -
+          Number(lowestCreative.ctr)
+        ).toFixed(2)
+      : "0.00";
+
+  // =========================================================
+  // DYNAMIC INSIGHTS
+  // =========================================================
+
   const insights = [
     {
       number: "01",
-      type: "VISUAL PATTERN",
-      title: "Prominent product placement",
-      description:
-        "Creatives where the product is clearly visible are associated with stronger CTR in the current campaign dataset.",
-      metric: "7.2%",
+      type: "PERFORMANCE SIGNAL",
+
+      title: topCreative
+        ? `${topCreative.creative} has the highest CTR`
+        : "Highest-performing creative",
+
+      description: topCreative
+        ? `${topCreative.creative} has the highest observed CTR in the uploaded campaign dataset. This makes it a useful candidate for further testing and comparison.`
+        : "Upload campaign data to identify the highest-performing creative.",
+
+      metric: topCreative
+        ? `${Number(topCreative.ctr).toFixed(2)}%`
+        : "—",
+
       metricLabel: "Observed CTR",
-      icon: "◈",
+      icon: "↗",
     },
+
     {
       number: "02",
-      type: "TEXT PATTERN",
-      title: "Lower text density",
+      type: "PERFORMANCE SIGNAL",
+
+      title: "CTR variation across creatives",
+
       description:
-        "Creatives with less visual text appear to perform better on click-through rate compared with more text-heavy creatives.",
-      metric: "6.8%",
-      metricLabel: "Observed CTR",
-      icon: "Aa",
+        campaignData.length > 1
+          ? `The difference between the highest and lowest observed CTR is ${ctrRange} percentage points. This variation indicates that creative-level performance differs within the current dataset.`
+          : "Upload multiple creatives to compare CTR variation.",
+
+      metric: `${ctrRange}%`,
+      metricLabel: "CTR spread",
+      icon: "◈",
     },
+
     {
       number: "03",
-      type: "CTA SIGNAL",
-      title: "Clear calls to action",
+      type: "CONVERSION SIGNAL",
+
+      title: "Overall conversion performance",
+
       description:
-        "Creatives with visually prominent calls to action show stronger engagement signals in the available campaign data.",
-      metric: "8.1%",
-      metricLabel: "Observed CTR",
-      icon: "→",
+        campaignData.length > 0
+          ? `The uploaded campaign has an overall conversion rate of ${Number(
+              summary.cvr
+            ).toFixed(
+              2
+            )}%. Use this as a baseline when testing new creative variations.`
+          : "Upload campaign data to calculate the overall conversion rate.",
+
+      metric: `${Number(summary.cvr).toFixed(2)}%`,
+      metricLabel: "Overall CVR",
+      icon: "◎",
     },
   ];
+
+  // =========================================================
+  // DYNAMIC RECOMMENDATIONS
+  // =========================================================
 
   const recommendations = [
     {
       priority: "HIGH PRIORITY",
-      title: "Test stronger product visibility",
-      description:
-        "Create a variation where the primary product is more visually prominent and compare its campaign performance.",
+
+      title: topCreative
+        ? `Study ${topCreative.creative} as a reference`
+        : "Identify your strongest creative",
+
+      description: topCreative
+        ? `${topCreative.creative} currently has the highest observed CTR at ${Number(
+            topCreative.ctr
+          ).toFixed(
+            2
+          )}%. Compare its creative characteristics with lower-performing creatives before creating new variations.`
+        : "Upload campaign data to identify the strongest-performing creative.",
+
       icon: "◈",
     },
+
     {
       priority: "MEDIUM PRIORITY",
-      title: "Reduce unnecessary text",
+
+      title: "Test one creative variable at a time",
+
       description:
-        "Test a simplified creative with fewer text elements while keeping the core marketing message unchanged.",
+        "Create controlled variations by changing one visual element at a time, such as product placement, text density, composition, or CTA prominence. Compare each variation against the current performance baseline.",
+
       icon: "Aa",
     },
+
     {
       priority: "MEDIUM PRIORITY",
-      title: "Experiment with CTA prominence",
-      description:
-        "Test a more visually distinct CTA placement and compare engagement against the current creative.",
+
+      title: "Use campaign metrics as your baseline",
+
+      description: `The current campaign baseline is ${Number(
+        summary.ctr
+      ).toFixed(2)}% CTR and ${Number(
+        summary.cvr
+      ).toFixed(2)}% CVR. Use these values when evaluating future creative experiments.`,
+
       icon: "→",
     },
   ];
 
+  // =========================================================
+  // TOGGLE FUNCTIONS
+  // =========================================================
+
   const togglePattern = (index) => {
-    setOpenPattern(openPattern === index ? null : index);
+    setOpenPattern(
+      openPattern === index ? null : index
+    );
   };
 
   const toggleRecommendation = (index) => {
@@ -73,54 +222,59 @@ function AIInsights() {
     );
   };
 
+  // =========================================================
+  // BACK BUTTON
+  // =========================================================
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.href = "/";
+    }
+  };
+
+  // =========================================================
+  // PAGE
+  // =========================================================
+
   return (
     <div className="insights-page">
 
-      {/* =================================
+      {/* =====================================================
           BACK BUTTON
-      ================================== */}
+      ===================================================== */}
 
       <button
         className="insights-back-button"
-        onClick={() => {
-          if (window.history.length > 1) {
-            window.history.back();
-          } else {
-            window.location.href = "/";
-          }
-        }}
+        onClick={handleBack}
         aria-label="Go back"
         title="Go back"
+        type="button"
       >
         ←
       </button>
 
-
-      {/* =================================
+      {/* =====================================================
           HEADER
-      ================================== */}
+      ===================================================== */}
 
       <div className="insights-header">
-
         <p className="page-label">
           AI-POWERED INTELLIGENCE
         </p>
 
-        <h1>
-          AI Insights
-        </h1>
+        <h1>AI Insights</h1>
 
         <p className="page-description">
-          Turn creative analysis and campaign performance data into
-          actionable marketing intelligence.
+          Turn creative analysis and campaign performance
+          data into actionable marketing intelligence.
         </p>
-
       </div>
 
-
-      {/* =================================
+      {/* =====================================================
           CAMPAIGN SUMMARY
-      ================================== */}
+      ===================================================== */}
 
       <section className="insight-summary">
 
@@ -135,14 +289,17 @@ function AIInsights() {
           </p>
 
           <h2>
-            Your creatives show several patterns worth testing
+            {loading
+              ? "Analyzing your campaign data..."
+              : campaignData.length > 0
+              ? "Your campaign data shows several performance signals"
+              : "Upload campaign data to generate insights"}
           </h2>
 
           <p>
-            The current campaign data shows associations between
-            certain visual characteristics and stronger performance.
-            These patterns can be used to design controlled creative
-            tests and future campaign variations.
+            {campaignData.length > 0
+              ? "InsightForge uses the uploaded campaign metrics to identify performance differences, surface useful signals, and suggest controlled creative tests."
+              : "Upload a campaign CSV from Campaign Analytics to generate data-driven performance insights."}
           </p>
 
         </div>
@@ -154,21 +311,24 @@ function AIInsights() {
           </span>
 
           <strong>
-            82%
+            {loading
+              ? "..."
+              : campaignData.length > 0
+              ? "LIVE"
+              : "—"}
           </strong>
 
           <small>
-            Pattern confidence
+            Based on current dataset
           </small>
 
         </div>
 
       </section>
 
-
-      {/* =================================
+      {/* =====================================================
           PERFORMANCE SNAPSHOT
-      ================================== */}
+      ===================================================== */}
 
       <div className="section-heading">
 
@@ -182,6 +342,9 @@ function AIInsights() {
 
       </div>
 
+      {/* =====================================================
+          PERFORMANCE METRICS
+      ===================================================== */}
 
       <div className="insight-metrics">
 
@@ -192,15 +355,16 @@ function AIInsights() {
           </span>
 
           <strong>
-            5.82%
+            {loading
+              ? "..."
+              : `${Number(summary.ctr).toFixed(2)}%`}
           </strong>
 
           <small>
-            Across analyzed creatives
+            Across uploaded creatives
           </small>
 
         </div>
-
 
         <div className="insight-metric-card">
 
@@ -209,7 +373,9 @@ function AIInsights() {
           </span>
 
           <strong>
-            7.95%
+            {loading
+              ? "..."
+              : `${Number(summary.cvr).toFixed(2)}%`}
           </strong>
 
           <small>
@@ -218,7 +384,6 @@ function AIInsights() {
 
         </div>
 
-
         <div className="insight-metric-card">
 
           <span>
@@ -226,7 +391,11 @@ function AIInsights() {
           </span>
 
           <strong>
-            7.20%
+            {loading
+              ? "..."
+              : topCreative
+              ? `${Number(topCreative.ctr).toFixed(2)}%`
+              : "—"}
           </strong>
 
           <small>
@@ -235,7 +404,6 @@ function AIInsights() {
 
         </div>
 
-
         <div className="insight-metric-card">
 
           <span>
@@ -243,7 +411,9 @@ function AIInsights() {
           </span>
 
           <strong>
-            24
+            {loading
+              ? "..."
+              : campaignData.length}
           </strong>
 
           <small>
@@ -254,10 +424,9 @@ function AIInsights() {
 
       </div>
 
-
-      {/* =================================
+      {/* =====================================================
           DETECTED PATTERNS
-      ================================== */}
+      ===================================================== */}
 
       <div className="section-heading patterns-heading">
 
@@ -266,11 +435,10 @@ function AIInsights() {
         </p>
 
         <h2>
-          Visual signals associated with performance
+          Performance signals from your campaign
         </h2>
 
       </div>
-
 
       <div className="insights-grid">
 
@@ -278,7 +446,9 @@ function AIInsights() {
 
           <div
             className={`insight-card ${
-              openPattern === index ? "expanded" : ""
+              openPattern === index
+                ? "expanded"
+                : ""
             }`}
             key={insight.number}
           >
@@ -288,6 +458,7 @@ function AIInsights() {
             <button
               className="insight-card-toggle"
               onClick={() => togglePattern(index)}
+              type="button"
             >
 
               <div className="insight-card-top">
@@ -303,13 +474,14 @@ function AIInsights() {
               </div>
 
               <div className="insight-toggle-icon">
-                {openPattern === index ? "−" : "+"}
+                {openPattern === index
+                  ? "−"
+                  : "+"}
               </div>
 
             </button>
 
-
-            {/* ALWAYS VISIBLE TITLE */}
+            {/* TITLE */}
 
             <div className="pattern-preview">
 
@@ -323,8 +495,7 @@ function AIInsights() {
 
             </div>
 
-
-            {/* COLLAPSIBLE CONTENT */}
+            {/* EXPANDED CONTENT */}
 
             {openPattern === index && (
 
@@ -356,10 +527,9 @@ function AIInsights() {
 
       </div>
 
-
-      {/* =================================
+      {/* =====================================================
           RECOMMENDATIONS
-      ================================== */}
+      ===================================================== */}
 
       <div className="section-heading recommendations-heading">
 
@@ -373,83 +543,86 @@ function AIInsights() {
 
       </div>
 
-
       <div className="recommendations-container">
 
-        {recommendations.map((recommendation, index) => (
+        {recommendations.map(
+          (recommendation, index) => (
 
-          <div
-            className={`recommendation-card ${
-              openRecommendation === index ? "expanded" : ""
-            }`}
-            key={index}
-          >
-
-            {/* CLICKABLE HEADER */}
-
-            <button
-              className="recommendation-toggle"
-              onClick={() => toggleRecommendation(index)}
+            <div
+              className={`recommendation-card ${
+                openRecommendation === index
+                  ? "expanded"
+                  : ""
+              }`}
+              key={index}
             >
 
-              <div className="recommendation-icon">
-                {recommendation.icon}
-              </div>
+              {/* CLICKABLE HEADER */}
 
-              <div className="recommendation-content">
+              <button
+                className="recommendation-toggle"
+                onClick={() =>
+                  toggleRecommendation(index)
+                }
+                type="button"
+              >
 
-                <span className="recommendation-priority">
-                  {recommendation.priority}
-                </span>
+                <div className="recommendation-icon">
+                  {recommendation.icon}
+                </div>
 
-                <h3>
-                  {recommendation.title}
-                </h3>
+                <div className="recommendation-content">
 
-              </div>
+                  <span className="recommendation-priority">
+                    {recommendation.priority}
+                  </span>
 
-              <div className="recommendation-arrow">
+                  <h3>
+                    {recommendation.title}
+                  </h3>
 
-                {openRecommendation === index
-                  ? "−"
-                  : "+"}
+                </div>
 
-              </div>
+                <div className="recommendation-arrow">
 
-            </button>
+                  {openRecommendation === index
+                    ? "−"
+                    : "+"}
 
+                </div>
 
-            {/* COLLAPSIBLE CONTENT */}
+              </button>
 
-            {openRecommendation === index && (
+              {/* EXPANDED CONTENT */}
 
-              <div className="recommendation-expanded-content">
+              {openRecommendation === index && (
 
-                <p>
-                  {recommendation.description}
-                </p>
+                <div className="recommendation-expanded-content">
 
-              </div>
+                  <p>
+                    {recommendation.description}
+                  </p>
 
-            )}
+                </div>
 
-          </div>
+              )}
 
-        ))}
+            </div>
+
+          )
+        )}
 
       </div>
 
-
-      {/* =================================
+      {/* =====================================================
           TESTING STRATEGY
-      ================================== */}
+      ===================================================== */}
 
       <section className="testing-card">
 
         <div className="testing-icon">
           ✦
         </div>
-
 
         <div className="testing-content">
 
@@ -462,13 +635,13 @@ function AIInsights() {
           </h2>
 
           <p>
-            Use these observations as hypotheses for your next
-            campaign. Create variations that change one visual
-            element at a time and compare their performance.
+            Use these observations as hypotheses for your
+            next campaign. Create variations that change
+            one visual element at a time and compare their
+            performance.
           </p>
 
         </div>
-
 
         <div className="testing-badge">
           AI READY
@@ -476,10 +649,9 @@ function AIInsights() {
 
       </section>
 
-
-      {/* =================================
+      {/* =====================================================
           FOOTER NOTE
-      ================================== */}
+      ===================================================== */}
 
       <div className="insights-footer">
 
@@ -488,9 +660,9 @@ function AIInsights() {
         </span>
 
         <p>
-          Insights are based on observed associations in the
-          available campaign data and should be validated through
-          controlled testing.
+          Insights are based on observed associations in
+          the available campaign data and should be
+          validated through controlled testing.
         </p>
 
       </div>
