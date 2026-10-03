@@ -1,10 +1,14 @@
 import { useState } from "react";
+
 import "./CampaignAnalytics.css";
 
 function CampaignAnalytics() {
   const [selectedFile, setSelectedFile] = useState(null);
+
   const [uploaded, setUploaded] = useState(false);
+
   const [uploading, setUploading] = useState(false);
+
   const [error, setError] = useState("");
 
   const [summary, setSummary] = useState({
@@ -26,8 +30,10 @@ function CampaignAnalytics() {
 
     if (!file) return;
 
+    // Reset previous state
     setError("");
     setUploaded(false);
+    setSelectedFile(null);
 
     // Check file type
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -35,7 +41,7 @@ function CampaignAnalytics() {
       return;
     }
 
-    // Backend currently allows 5 MB
+    // Backend allows 5 MB
     if (file.size > 5 * 1024 * 1024) {
       setError("CSV file must be smaller than 5 MB.");
       return;
@@ -46,7 +52,6 @@ function CampaignAnalytics() {
 
     const formData = new FormData();
 
-    // IMPORTANT:
     // Backend expects the field name "campaign"
     formData.append("campaign", file);
 
@@ -59,15 +64,51 @@ function CampaignAnalytics() {
         }
       );
 
-      const data = await response.json();
+      // Safely read the response
+      const contentType =
+        response.headers.get("content-type") || "";
 
-      if (!response.ok) {
+      let data;
+
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+
+        console.error(
+          "Backend returned non-JSON response:",
+          text
+        );
+
         throw new Error(
-          data.message || "Failed to process campaign CSV"
+          response.ok
+            ? "Backend returned an unexpected response."
+            : `Backend error (${response.status}). Please make sure the backend is running.`
         );
       }
 
-      console.log("Campaign API response:", data);
+      // Handle backend errors
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+            "Failed to process campaign CSV."
+        );
+      }
+
+      console.log(
+        "Campaign API response:",
+        data
+      );
+
+      // Make sure expected data exists
+      if (
+        !data.summary ||
+        !Array.isArray(data.campaignData)
+      ) {
+        throw new Error(
+          "The backend response is missing campaign data."
+        );
+      }
 
       // Save backend summary
       setSummary(data.summary);
@@ -76,22 +117,35 @@ function CampaignAnalytics() {
       setCampaignData(data.campaignData);
 
       setUploaded(true);
-
     } catch (err) {
-      console.error("Campaign upload error:", err);
+      console.error(
+        "Campaign upload error:",
+        err
+      );
+
+      let message = err.message;
+
+      if (
+        err.name === "TypeError" &&
+        err.message
+          .toLowerCase()
+          .includes("fetch")
+      ) {
+        message =
+          "Unable to connect to the campaign analytics backend. Make sure the backend is running on port 5000.";
+      }
 
       setError(
-        err.message ||
-        "Unable to connect to the campaign analytics backend."
+        message ||
+          "Failed to process campaign CSV."
       );
 
       setUploaded(false);
-
+      setCampaignData([]);
     } finally {
       setUploading(false);
     }
   };
-
 
   // =================================
   // GO BACK
@@ -104,7 +158,6 @@ function CampaignAnalytics() {
       window.location.href = "/";
     }
   };
-
 
   return (
     <div className="campaign-page">
@@ -121,7 +174,6 @@ function CampaignAnalytics() {
       >
         ←
       </button>
-
 
       {/* =================================
           HEADER
@@ -140,14 +192,14 @@ function CampaignAnalytics() {
           </h1>
 
           <p className="page-description">
-            Connect campaign performance data with your creatives to
-            understand what is associated with stronger marketing results.
+            Connect campaign performance data with
+            your creatives to understand what is
+            associated with stronger marketing results.
           </p>
 
         </div>
 
       </div>
-
 
       {/* =================================
           CSV UPLOAD
@@ -166,8 +218,9 @@ function CampaignAnalytics() {
           </h2>
 
           <p>
-            Upload a CSV containing impressions, clicks, conversions,
-            spend and other campaign performance metrics.
+            Upload a CSV containing impressions,
+            clicks, conversions, spend and other
+            campaign performance metrics.
           </p>
 
           <input
@@ -182,9 +235,10 @@ function CampaignAnalytics() {
             htmlFor="campaign-csv"
             className="campaign-upload-button"
           >
-            {uploading ? "Processing CSV..." : "Browse CSV Files"}
+            {uploading
+              ? "Processing CSV..."
+              : "Browse CSV Files"}
           </label>
-
 
           {/* Selected CSV */}
 
@@ -202,14 +256,16 @@ function CampaignAnalytics() {
                 </strong>
 
                 <small>
-                  {(selectedFile.size / 1024).toFixed(1)} KB
+                  {(selectedFile.size / 1024).toFixed(
+                    1
+                  )}{" "}
+                  KB
                 </small>
 
               </div>
 
             </div>
           )}
-
 
           {/* Upload error */}
 
@@ -218,7 +274,6 @@ function CampaignAnalytics() {
               {error}
             </div>
           )}
-
 
           {/* Success */}
 
@@ -231,7 +286,6 @@ function CampaignAnalytics() {
         </div>
 
       </div>
-
 
       {/* =================================
           PERFORMANCE OVERVIEW
@@ -249,13 +303,11 @@ function CampaignAnalytics() {
 
       </div>
 
-
       {/* =================================
           METRIC CARDS
       ================================== */}
 
       <div className="metric-grid">
-
 
         {/* CTR */}
 
@@ -283,7 +335,6 @@ function CampaignAnalytics() {
 
         </div>
 
-
         {/* CVR */}
 
         <div className="metric-card">
@@ -309,7 +360,6 @@ function CampaignAnalytics() {
           </p>
 
         </div>
-
 
         {/* CPC */}
 
@@ -337,7 +387,6 @@ function CampaignAnalytics() {
 
         </div>
 
-
         {/* CPA */}
 
         <div className="metric-card">
@@ -363,7 +412,6 @@ function CampaignAnalytics() {
           </p>
 
         </div>
-
 
         {/* ROAS */}
 
@@ -395,7 +443,6 @@ function CampaignAnalytics() {
 
       </div>
 
-
       {/* =================================
           CAMPAIGN DATA TABLE
       ================================== */}
@@ -417,18 +464,20 @@ function CampaignAnalytics() {
           </div>
 
           <span className="data-status">
-            {uploaded ? "CSV uploaded" : "No data uploaded"}
+            {uploaded
+              ? "CSV uploaded"
+              : "No data uploaded"}
           </span>
 
         </div>
-
 
         <div className="table-wrapper">
 
           {campaignData.length === 0 ? (
 
             <div className="empty-campaign-state">
-              Upload a campaign CSV to view performance data.
+              Upload a campaign CSV to view
+              performance data.
             </div>
 
           ) : (
@@ -479,70 +528,65 @@ function CampaignAnalytics() {
 
               </thead>
 
-
               <tbody>
 
-                {campaignData.map((row, index) => (
+                {campaignData.map(
+                  (row, index) => (
 
-                  <tr key={index}>
+                    <tr key={index}>
 
-                    <td>
+                      <td>
 
-                      <div className="creative-name">
+                        <div className="creative-name">
 
-                        <span className="creative-dot"></span>
+                          <span className="creative-dot"></span>
 
-                        {row.creative}
+                          {row.creative}
 
-                      </div>
+                        </div>
 
-                    </td>
+                      </td>
 
+                      <td>
+                        {row.impressions.toLocaleString()}
+                      </td>
 
-                    <td>
-                      {row.impressions.toLocaleString()}
-                    </td>
+                      <td>
+                        {row.clicks.toLocaleString()}
+                      </td>
 
+                      <td>
+                        {row.conversions.toLocaleString()}
+                      </td>
 
-                    <td>
-                      {row.clicks.toLocaleString()}
-                    </td>
+                      <td className="metric-value">
+                        {row.ctr.toFixed(2)}%
+                      </td>
 
+                      <td className="metric-value">
+                        {row.cvr.toFixed(2)}%
+                      </td>
 
-                    <td>
-                      {row.conversions.toLocaleString()}
-                    </td>
+                      <td className="metric-value">
+                        ₹{row.cpc.toFixed(2)}
+                      </td>
 
+                      <td className="metric-value">
+                        ₹{row.cpa.toFixed(2)}
+                      </td>
 
-                    <td className="metric-value">
-                      {row.ctr.toFixed(2)}%
-                    </td>
+                      <td className="metric-value">
 
+                        {row.roas !== null
+                          ? `${row.roas.toFixed(2)}x`
+                          : "N/A"}
 
-                    <td className="metric-value">
-                      {row.cvr.toFixed(2)}%
-                    </td>
+                      </td>
 
+                    </tr>
 
-                    <td className="metric-value">
-                      ₹{row.cpc.toFixed(2)}
-                    </td>
-
-
-                    <td className="metric-value">
-                      ₹{row.cpa.toFixed(2)}
-                    </td>
-
-
-                    <td className="metric-value">
-                      {row.roas !== null
-                        ? `${row.roas.toFixed(2)}x`
-                        : "N/A"}
-                    </td>
-
-                  </tr>
-
-                ))}
+                  )
+                )}
 
               </tbody>
 
@@ -553,7 +597,6 @@ function CampaignAnalytics() {
         </div>
 
       </div>
-
 
       {/* =================================
           CHARTS
@@ -575,9 +618,7 @@ function CampaignAnalytics() {
 
           </div>
 
-
           <div className="chart-grid">
-
 
             {/* CTR CHART */}
 
@@ -599,51 +640,52 @@ function CampaignAnalytics() {
 
               </div>
 
-
               <div className="bar-chart">
 
-                {campaignData.map((item, index) => {
+                {campaignData.map(
+                  (item, index) => {
 
-                  const value = Number(item.ctr) || 0;
+                    const value =
+                      Number(item.ctr) || 0;
 
-                  return (
+                    return (
 
-                    <div
-                      className="bar-row"
-                      key={index}
-                    >
+                      <div
+                        className="bar-row"
+                        key={index}
+                      >
 
-                      <span className="bar-label">
-                        {item.creative}
-                      </span>
+                        <span className="bar-label">
+                          {item.creative}
+                        </span>
 
+                        <div className="bar-track">
 
-                      <div className="bar-track">
+                          <div
+                            className="bar-fill"
+                            style={{
+                              width: `${Math.min(
+                                value * 10,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
 
-                        <div
-                          className="bar-fill"
-                          style={{
-                            width: `${Math.min(value * 10, 100)}%`,
-                          }}
-                        ></div>
+                        </div>
+
+                        <span className="bar-value">
+                          {value.toFixed(2)}%
+                        </span>
 
                       </div>
 
-
-                      <span className="bar-value">
-                        {value.toFixed(2)}%
-                      </span>
-
-                    </div>
-
-                  );
-
-                })}
+                    );
+                  }
+                )}
 
               </div>
 
             </div>
-
 
             {/* CVR CHART */}
 
@@ -665,46 +707,48 @@ function CampaignAnalytics() {
 
               </div>
 
-
               <div className="bar-chart">
 
-                {campaignData.map((item, index) => {
+                {campaignData.map(
+                  (item, index) => {
 
-                  const value = Number(item.cvr) || 0;
+                    const value =
+                      Number(item.cvr) || 0;
 
-                  return (
+                    return (
 
-                    <div
-                      className="bar-row"
-                      key={index}
-                    >
+                      <div
+                        className="bar-row"
+                        key={index}
+                      >
 
-                      <span className="bar-label">
-                        {item.creative}
-                      </span>
+                        <span className="bar-label">
+                          {item.creative}
+                        </span>
 
+                        <div className="bar-track">
 
-                      <div className="bar-track">
+                          <div
+                            className="bar-fill"
+                            style={{
+                              width: `${Math.min(
+                                value * 10,
+                                100
+                              )}%`,
+                            }}
+                          ></div>
 
-                        <div
-                          className="bar-fill"
-                          style={{
-                            width: `${Math.min(value * 10, 100)}%`,
-                          }}
-                        ></div>
+                        </div>
+
+                        <span className="bar-value">
+                          {value.toFixed(2)}%
+                        </span>
 
                       </div>
 
-
-                      <span className="bar-value">
-                        {value.toFixed(2)}%
-                      </span>
-
-                    </div>
-
-                  );
-
-                })}
+                    );
+                  }
+                )}
 
               </div>
 
@@ -715,7 +759,6 @@ function CampaignAnalytics() {
         </div>
 
       )}
-
 
       {/* =================================
           AI INSIGHT PREVIEW
@@ -729,19 +772,21 @@ function CampaignAnalytics() {
         role="button"
         tabIndex={0}
         onKeyDown={(event) => {
+
           if (
             event.key === "Enter" ||
             event.key === " "
           ) {
-            window.location.href = "/insights";
+            window.location.href =
+              "/insights";
           }
+
         }}
       >
 
         <div className="insight-symbol">
           ✦
         </div>
-
 
         <div>
 
@@ -750,24 +795,24 @@ function CampaignAnalytics() {
           </p>
 
           <h2>
-            Connect performance with visual creative signals
+            Connect performance with visual
+            creative signals
           </h2>
 
           <p>
-            Once campaign data is connected with your analyzed
-            creatives, InsightForge can identify patterns between
-            visual characteristics and campaign metrics.
+            Once campaign data is connected with
+            your analyzed creatives, InsightForge
+            can identify patterns between visual
+            characteristics and campaign metrics.
           </p>
 
         </div>
-
 
         <div className="insight-arrow">
           →
         </div>
 
       </div>
-
 
     </div>
   );
