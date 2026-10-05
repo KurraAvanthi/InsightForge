@@ -1,5 +1,12 @@
 # InsightForge
 
+## 🌐 Run the Project
+
+Open the frontend locally:
+
+**[Launch InsightForge](http://localhost:5173/)**
+
+
 ### AI-Powered Visual Marketing Intelligence Platform
 
 InsightForge helps marketing teams understand how the visual characteristics of their creatives relate to campaign performance.
